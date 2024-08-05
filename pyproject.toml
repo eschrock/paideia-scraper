@@ -11,6 +11,7 @@ scrape = 'paideia_scraper.main:main'
 
 [tool.poetry.dependencies]
 python = "^3.11"
+selenium = "^4.23.1"
 
 
 [build-system]
