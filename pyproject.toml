@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "paideia-scraper"
+version = "0.1.0"
+description = "Paideia Directory Scraper"
+authors = ["Eric Schrock <eschrock@gmail.com>"]
+readme = "README.md"
+packages = [{include = "paideia_scraper"}]
+
+[tool.poetry.scripts]
+scrape = 'paideia_scraper.main:main'
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
