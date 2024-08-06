@@ -1,15 +1,16 @@
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.wait import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import Select
+import csv
+import json
 import os
 import sys
-import json
 import time
-from selenium.common.exceptions import NoSuchElementException
 from pprint import pp
 
+from selenium import webdriver
+from selenium.common.exceptions import NoSuchElementException
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import Select
+from selenium.webdriver.support.wait import WebDriverWait
 
 STUDENT_DIRECTORY_URL = "https://www.paideiaschool.org/parent-portal/student-directory"
 
@@ -114,9 +115,6 @@ def get_student_parents(driver, students):
 
         close_student_dialog(driver)
 
-        # Debug - return for now
-        return student_parents
-
     return student_parents
 
 
@@ -177,9 +175,12 @@ def get_parent_info(driver, students, parents):
                 mobile_elems = contacts_elem.find_elements(
                     By.CSS_SELECTOR, ".fsPhoneMobile div"
                 )
-                phone_number = mobile_elems[1].text.strip()
-                parent_info["phone"] = phone_number
-                print(f"Found mobile number {parent_name}: {phone_number}")
+                if len(mobile_elems) > 0:
+                    phone_number = mobile_elems[1].text.strip()
+                    parent_info["phone"] = phone_number
+                    print(f"Found mobile number {parent_name}: {phone_number}")
+                else:
+                    parent_info["phone"] = None
             except NoSuchElementException:
                 parent_info["phone"] = None
 
@@ -190,14 +191,37 @@ def get_parent_info(driver, students, parents):
     return student_parent_info
 
 
+def create_csv_dataset(parent_data):
+    csv_data = [["Student", "Class", "Parent", "Email", "Phone"]]
+    for class_name, students in parent_data.items():
+        for student_name, parents in students.items():
+            for parent_name, parent_info in parents.items():
+                csv_data.append(
+                    [
+                        student_name,
+                        class_name,
+                        parent_name,
+                        parent_info["email"],
+                        parent_info["phone"],
+                    ]
+                )
+    return csv_data
+
+
 def main() -> int:
-    if len(sys.argv) != 2:
-        exit("usage: scrape <class ...>")
     driver = login()
-    students = get_class_students(driver, sys.argv[1])
-    parents = get_student_parents(driver, students)
-    parent_info = get_parent_info(driver, students, parents)
-    pp(parent_info)
+    parent_data = {}
+    for class_name in sys.argv[1:]:
+        students = get_class_students(driver, class_name)
+        parents = get_student_parents(driver, students)
+        parent_data[class_name] = get_parent_info(driver, students, parents)
+
+    print("Writing to output.csv")
+    csv_data = create_csv_dataset(parent_data)
+    with open("output.csv", "w", newline="") as output:
+        writer = csv.writer(output)
+        writer.writerows(csv_data)
+
     return 0
 
 
