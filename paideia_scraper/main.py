@@ -78,7 +78,35 @@ def get_class_students(driver, class_name):
 
 
 def get_parent_info(driver, students):
-    pass
+    student_parents = {}
+
+    for student_name, student_elem in students.items():
+        student_elem.click()
+
+        # Wait until the relationships are visible
+        WebDriverWait(driver, 600).until(
+            EC.presence_of_element_located((By.CLASS_NAME, "fsRelationships"))
+        )
+
+        student_parents[student_name] = {}
+
+        # Find parents
+        parent_elem_list = driver.find_elements(By.CLASS_NAME, "fsRelationshipParent")
+        for parent_elem in parent_elem_list:
+            parent_link = parent_elem.find_element(
+                By.CLASS_NAME, "fsConstituentProfileLink"
+            )
+            parent_name = parent_link.text.strip()
+            print(f"Found parent {parent_name} for student {student_name}")
+
+            student_parents[student_name][parent_name] = parent_elem
+
+        # Close the dialog
+        close_button = driver.find_element(By.CLASS_NAME, "fsDialogCloseButton")
+        close_button.click()
+        WebDriverWait(driver, 600).until(
+            EC.invisibility_of_element_located((By.CLASS_NAME, "fsRelationships"))
+        )
 
 
 def main() -> int:
