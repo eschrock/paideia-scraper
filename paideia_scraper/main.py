@@ -8,6 +8,7 @@ import sys
 import json
 import time
 from selenium.common.exceptions import NoSuchElementException
+from pprint import pp
 
 
 STUDENT_DIRECTORY_URL = "https://www.paideiaschool.org/parent-portal/student-directory"
@@ -77,17 +78,27 @@ def get_class_students(driver, class_name):
     return students
 
 
-def get_parent_info(driver, students):
+def open_student_dialog(driver, student_elem):
+    student_elem.click()
+
+    WebDriverWait(driver, 600).until(
+        EC.presence_of_element_located((By.CLASS_NAME, "fsRelationships"))
+    )
+
+
+def close_student_dialog(driver):
+    close_button = driver.find_element(By.CLASS_NAME, "fsDialogCloseButton")
+    close_button.click()
+    WebDriverWait(driver, 600).until(
+        EC.invisibility_of_element_located((By.CLASS_NAME, "fsRelationships"))
+    )
+
+
+def get_student_parents(driver, students):
     student_parents = {}
 
     for student_name, student_elem in students.items():
-        student_elem.click()
-
-        # Wait until the relationships are visible
-        WebDriverWait(driver, 600).until(
-            EC.presence_of_element_located((By.CLASS_NAME, "fsRelationships"))
-        )
-
+        open_student_dialog(driver, student_elem)
         student_parents[student_name] = {}
 
         # Find parents
@@ -101,20 +112,92 @@ def get_parent_info(driver, students):
 
             student_parents[student_name][parent_name] = parent_elem
 
-        # Close the dialog
-        close_button = driver.find_element(By.CLASS_NAME, "fsDialogCloseButton")
-        close_button.click()
-        WebDriverWait(driver, 600).until(
-            EC.invisibility_of_element_located((By.CLASS_NAME, "fsRelationships"))
+        close_student_dialog(driver)
+
+        # Debug - return for now
+        return student_parents
+
+    return student_parents
+
+
+def open_parent_dialog(driver, student_elem, parent_name):
+    open_student_dialog(driver, student_elem)
+
+    parent_elem_list = driver.find_elements(By.CLASS_NAME, "fsRelationshipParent")
+    for parent_elem in parent_elem_list:
+        parent_link = parent_elem.find_element(
+            By.CLASS_NAME, "fsConstituentProfileLink"
         )
+        parent_elem_name = parent_link.text.strip()
+
+        if parent_elem_name == parent_name:
+            parent_link.click()
+
+            WebDriverWait(driver, 600).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "fsContacts"))
+            )
+            contacts_elem = driver.find_element(By.CLASS_NAME, "fsContacts")
+            return contacts_elem
+
+    exit(f"failed to find parent {parent_name}")
+
+
+def close_parent_dialog(driver):
+    close_button = driver.find_element(By.CLASS_NAME, "fsDialogCloseButton")
+    close_button.click()
+    WebDriverWait(driver, 600).until(
+        EC.invisibility_of_element_located((By.CLASS_NAME, "fsContacts"))
+    )
+
+
+def get_parent_info(driver, students, parents):
+    student_parent_info = {}
+
+    for student_name, parents in parents.items():
+        student_parent_info[student_name] = {}
+        for parent_name in parents.keys():
+            parent_info = {}
+            contacts_elem = open_parent_dialog(
+                driver, students[student_name], parent_name
+            )
+
+            # Get the contact email
+            try:
+                email_elem = contacts_elem.find_element(
+                    By.CSS_SELECTOR, ".fsEmailHome .fsStyleSROnly"
+                )
+                email = email_elem.text.strip()
+                parent_info["email"] = email
+                print(f"Found email {parent_name}: {email}")
+            except NoSuchElementException:
+                parent_info["email"] = None
+
+            # Get the contact mobile number
+            try:
+                mobile_elems = contacts_elem.find_elements(
+                    By.CSS_SELECTOR, ".fsPhoneMobile div"
+                )
+                phone_number = mobile_elems[1].text.strip()
+                parent_info["phone"] = phone_number
+                print(f"Found mobile number {parent_name}: {phone_number}")
+            except NoSuchElementException:
+                parent_info["phone"] = None
+
+            close_parent_dialog(driver)
+
+            student_parent_info[student_name][parent_name] = parent_info
+
+    return student_parent_info
 
 
 def main() -> int:
     if len(sys.argv) != 2:
-        exit("usage: scrape <class name>")
+        exit("usage: scrape <class ...>")
     driver = login()
     students = get_class_students(driver, sys.argv[1])
-    get_parent_info(driver, students)
+    parents = get_student_parents(driver, students)
+    parent_info = get_parent_info(driver, students, parents)
+    pp(parent_info)
     return 0
 
 
