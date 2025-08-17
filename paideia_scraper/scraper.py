@@ -6,6 +6,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support.wait import WebDriverWait
+from selenium.common.exceptions import NoSuchElementException
 
 from .mock import MOCK_STUDENTS
 
@@ -173,6 +174,85 @@ class Scraper:
         self._logger.info(f"Extracted {len(students)} students from page")
         return students
 
+    def _next_student_page(self):
+        """
+        Navigate to the next page of students if available.
+
+        Returns:
+            bool: True if successfully navigated to next page, False if no next page
+        """
+        try:
+            # Look for the next page link
+            next_page_link = self._driver.find_element(By.CLASS_NAME, "fsNextPageLink")
+
+            # Click the next page link
+            next_page_link.click()
+            self._logger.debug("Navigating to next page")
+
+            # Wait for the search location field to be present (indicates page loaded)
+            WebDriverWait(self._driver, self.TIMEOUT).until(
+                EC.presence_of_element_located((By.NAME, "const_search_location"))
+            )
+
+            self._logger.debug("Next page loaded successfully")
+            return True
+
+        except NoSuchElementException:
+            # No next page link found
+            return False
+        except Exception as e:
+            self._logger.error(f"Error navigating to next page: {e}")
+            return False
+
+    def _get_class_student_info(self, class_name):
+        """
+        Get student information for a single class by scraping all pages.
+
+        Args:
+            class_name: Name of the class to scrape
+
+        Returns:
+            List of student dictionaries with name, class, and mock parents
+        """
+        self._logger.info(f"Processing class: {class_name}")
+
+        # Select the class and wait for it to load
+        self._select_class(class_name)
+
+        class_students = []
+        page_num = 1
+
+        while True:
+            self._logger.info(f"Fetching students from page {page_num}")
+
+            # Fetch students from current page
+            students_from_page = self._fetch_students_from_page()
+
+            # Add mock parent information to each student
+            for student in students_from_page:
+                # Generate random number of parents (1-2)
+                num_parents = random.randint(1, 2)
+                from .mock import mock_parents
+
+                student["parents"] = mock_parents(num_parents)
+                class_students.append(student)
+
+                self._logger.debug(
+                    f"Added student {student['name']} with {num_parents} parents"
+                )
+
+            # Try to go to next page
+            if not self._next_student_page():
+                self._logger.debug(f"No more pages for class {class_name}")
+                break
+
+            page_num += 1
+
+        self._logger.info(
+            f"Total students collected for {class_name}: {len(class_students)}"
+        )
+        return class_students
+
     def get_student_info(self, mock=None, classes=None):
         """
         Get student information either from mock data or by scraping.
@@ -195,43 +275,9 @@ class Scraper:
 
             for class_name in classes:
                 try:
-                    self._logger.info(f"Processing class: {class_name}")
-
-                    # Select the class and wait for it to load
-                    self._select_class(class_name)
-
-                    if mock == "parents":
-                        # Fetch real student data from the page
-                        students_from_page = self._fetch_students_from_page()
-
-                        # Add mock parent information to each student
-                        for student in students_from_page:
-                            # Generate random number of parents (1-2)
-                            num_parents = random.randint(1, 2)
-                            from .mock import mock_parents
-
-                            student["parents"] = mock_parents(num_parents)
-                            all_students.append(student)
-
-                            self._logger.debug(
-                                f"Added student {student['name']} with {num_parents} parents"
-                            )
-                    else:
-                        # For now, always create placeholder students for each class
-                        # TODO: Replace this with actual student scraping logic
-                        from .mock import mock_student_name, mock_parents
-
-                        placeholder_student = {
-                            "name": mock_student_name(),
-                            "class": class_name,
-                            "parents": mock_parents(2),  # Default to 2 parents
-                        }
-
-                        # Append the student info to our results
-                        all_students.append(placeholder_student)
-                        self._logger.info(
-                            f"Created placeholder student for class: {class_name}"
-                        )
+                    # Get student info for this class (always loops through pages)
+                    class_students = self._get_class_student_info(class_name)
+                    all_students.extend(class_students)
 
                 except Exception as e:
                     self._logger.error(f"Error processing class '{class_name}': {e}")
