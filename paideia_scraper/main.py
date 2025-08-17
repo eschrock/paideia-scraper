@@ -13,9 +13,9 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support.wait import WebDriverWait
 
-from .config import load_config
-from .scraper import Scraper
-from .output import Output
+from paideia_scraper.config import load_config
+from paideia_scraper.scraper import Scraper
+from paideia_scraper.output import Output
 
 
 def setup_logging(debug: bool = False):
@@ -53,7 +53,7 @@ def main() -> int:
     parser.add_argument(
         "--mock",
         metavar="TYPE",
-        choices=["students"],
+        choices=["students", "parents"],
         help="Use mock data of specified type (can be combined with class names)",
     )
     parser.add_argument(
@@ -103,14 +103,6 @@ def main() -> int:
 
     finally:
         scraper.close()
-
-
-# Supporting functions - kept for future migration to scraper
-def get_current_group_id(driver):
-    pagination_elem = driver.find_element(By.CLASS_NAME, "fsElementPagination")
-    raw_params = pagination_elem.get_attribute("data-searchparams")
-    search_params = json.loads(raw_params)
-    return search_params["const_search_location"]
 
 
 def get_class_students(driver, class_name):

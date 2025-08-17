@@ -1,7 +1,10 @@
 import logging
+import json
+import random
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support.wait import WebDriverWait
 
 from .mock import MOCK_STUDENTS
@@ -62,6 +65,114 @@ class Scraper:
             EC.presence_of_element_located((By.NAME, "const_search_location"))
         )
 
+    def _get_current_group_id(self):
+        """Get the current group ID from the pagination element."""
+        pagination_elem = self._driver.find_element(
+            By.CLASS_NAME, "fsElementPagination"
+        )
+        raw_params = pagination_elem.get_attribute("data-searchparams")
+        search_params = json.loads(raw_params)
+        return search_params["const_search_location"]
+
+    def _select_class(self, class_name):
+        """
+        Select a class from the dropdown and wait for the page to update.
+
+        Args:
+            class_name: Name of the class to select
+
+        Raises:
+            ValueError: If the class name is not found in the dropdown
+            TimeoutError: If the page doesn't update within the timeout period
+        """
+        # Find and select the class
+        select_elem = self._driver.find_element(By.NAME, "const_search_location")
+        select = Select(select_elem)
+
+        # Check if the class exists in the dropdown
+        try:
+            select.select_by_visible_text(class_name)
+        except Exception as e:
+            available_options = [option.text for option in select.options]
+            raise ValueError(
+                f"Class '{class_name}' not found. Available options: {available_options}"
+            ) from e
+
+        # Get the group ID for the selected class
+        group_id = select.first_selected_option.get_attribute("value")
+        self._logger.info(f"Selected class '{class_name}' with group ID: {group_id}")
+
+        # Submit the form
+        select_elem.submit()
+
+        # Wait for the page to update with the new class data
+        try:
+            WebDriverWait(self._driver, self.TIMEOUT).until(
+                lambda driver: self._get_current_group_id() == group_id
+            )
+            self._logger.debug(f"Class '{class_name}' data loaded successfully")
+        except Exception as e:
+            raise TimeoutError(
+                f"Timeout waiting for class '{class_name}' data to load"
+            ) from e
+
+    def _fetch_students_from_page(self):
+        """
+        Fetch student information from the current page.
+
+        Returns:
+            List of student dictionaries with name and class
+        """
+        students = []
+
+        # Find all student item containers
+        student_items = self._driver.find_elements(By.CLASS_NAME, "fsConstituentItem")
+
+        for item in student_items:
+            try:
+                # Wait for student name to be populated
+                name_elem = WebDriverWait(item, 10).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "fsFullName"))
+                )
+
+                # Wait for the name text to be non-empty
+                WebDriverWait(item, 10).until(lambda x: name_elem.text.strip() != "")
+
+                student_name = name_elem.text.strip()
+
+                # Skip students with empty names (shouldn't happen now, but safety check)
+                if not student_name:
+                    continue
+
+                # Wait for location to be populated
+                location_elem = WebDriverWait(item, 10).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "fsLocations"))
+                )
+
+                # Wait for the location text to be non-empty
+                WebDriverWait(item, 10).until(
+                    lambda x: location_elem.text.strip() != ""
+                )
+
+                location_text = location_elem.text.strip()
+
+                # Take only the part before the first comma
+                class_name = location_text.split(",")[0].strip()
+
+                student = {"name": student_name, "class": class_name}
+
+                students.append(student)
+                self._logger.debug(
+                    f"Found student: {student_name} in class: {class_name}"
+                )
+
+            except Exception as e:
+                self._logger.warning(f"Could not extract student info from item: {e}")
+                continue
+
+        self._logger.info(f"Extracted {len(students)} students from page")
+        return students
+
     def get_student_info(self, mock=None, classes=None):
         """
         Get student information either from mock data or by scraping.
@@ -79,9 +190,56 @@ class Scraper:
 
         if classes:
             self._logger.info(f"Scraping real data for classes: {classes}")
-            # TODO: Implement real scraping logic here using the classes parameter
-            # For now, return empty list when not using mock data
-            return []
+
+            all_students = []
+
+            for class_name in classes:
+                try:
+                    self._logger.info(f"Processing class: {class_name}")
+
+                    # Select the class and wait for it to load
+                    self._select_class(class_name)
+
+                    if mock == "parents":
+                        # Fetch real student data from the page
+                        students_from_page = self._fetch_students_from_page()
+
+                        # Add mock parent information to each student
+                        for student in students_from_page:
+                            # Generate random number of parents (1-2)
+                            num_parents = random.randint(1, 2)
+                            from .mock import mock_parents
+
+                            student["parents"] = mock_parents(num_parents)
+                            all_students.append(student)
+
+                            self._logger.debug(
+                                f"Added student {student['name']} with {num_parents} parents"
+                            )
+                    else:
+                        # For now, always create placeholder students for each class
+                        # TODO: Replace this with actual student scraping logic
+                        from .mock import mock_student_name, mock_parents
+
+                        placeholder_student = {
+                            "name": mock_student_name(),
+                            "class": class_name,
+                            "parents": mock_parents(2),  # Default to 2 parents
+                        }
+
+                        # Append the student info to our results
+                        all_students.append(placeholder_student)
+                        self._logger.info(
+                            f"Created placeholder student for class: {class_name}"
+                        )
+
+                except Exception as e:
+                    self._logger.error(f"Error processing class '{class_name}': {e}")
+                    # Continue with other classes even if one fails
+                    continue
+
+            self._logger.info(f"Total students collected: {len(all_students)}")
+            return all_students
 
         self._logger.warning("No mock data or classes specified")
         return []

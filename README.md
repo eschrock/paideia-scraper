@@ -68,8 +68,10 @@ python -m paideia_scraper.main "Class Name 1" "Class Name 2"
 
 - `--debug`: Enable debug logging for detailed output
 - `--login-only`: Only perform login, then exit (useful for testing credentials)
-- `--mock TYPE`: Use mock data of specified type instead of scraping real data (mutually exclusive with other scraping options)
-- `classes`: Class names to scrape (required unless --login-only or --mock is specified)
+- `--mock TYPE`: Use mock data of specified type (can be combined with class names)
+  - `students`: Mock student data with realistic parent information
+  - `parents`: Mock parent data (placeholder for future real student + mock parent functionality)
+- `classes`: Class names to scrape (can be combined with --mock)
 
 ### Examples
 
@@ -119,6 +121,12 @@ Test with mock student data and debug logging:
 
 ```bash
 python -m paideia_scraper.main --mock students --debug
+```
+
+Test with mock parent data (placeholder for future functionality):
+
+```bash
+python -m paideia_scraper.main --mock parents
 ```
 
 ## Troubleshooting

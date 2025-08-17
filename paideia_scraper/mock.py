@@ -1,82 +1,52 @@
 """Mock data for testing the Paideia scraper output functionality."""
 
+from faker import Faker
+
+# Initialize Faker for generating realistic data
+fake = Faker()
+
+
+def mock_parents(num_parents):
+    """
+    Generate mock parent information for testing.
+
+    Args:
+        num_parents: Number of parents to generate
+
+    Returns:
+        List of parent dictionaries with name, email, and phone
+    """
+    parents = []
+
+    for i in range(num_parents):
+        # Generate realistic parent data
+        parent = {
+            "name": fake.name(),
+            "email": fake.email(),
+            "phone": fake.phone_number(),
+        }
+        parents.append(parent)
+
+    return parents
+
+
+def mock_student_name():
+    """
+    Generate a mock student name for testing.
+
+    Returns:
+        String containing a realistic student name
+    """
+    return fake.name()
+
+
+# Generate mock students with dynamic parent data
 MOCK_STUDENTS = [
-    {
-        "name": "Alice Johnson",
-        "class": "Kindergarten",
-        "parents": [
-            {
-                "name": "John Johnson",
-                "email": "john.johnson@email.com",
-                "phone": "555-0101",
-            },
-            {"name": "Mary Johnson", "email": "mary.johnson@email.com", "phone": None},
-        ],
-    },
-    {
-        "name": "Bob Smith",
-        "class": "Kindergarten",
-        "parents": [{"name": "Tom Smith", "email": None, "phone": "555-0201"}],
-    },
-    {
-        "name": "Charlie Brown",
-        "class": "Kindergarten",
-        "parents": [
-            {
-                "name": "Frank Brown",
-                "email": "frank.brown@email.com",
-                "phone": "555-0301",
-            },
-            {
-                "name": "Sally Brown",
-                "email": "sally.brown@email.com",
-                "phone": "555-0302",
-            },
-        ],
-    },
-    {
-        "name": "Diana Prince",
-        "class": "1st Grade",
-        "parents": [
-            {
-                "name": "Steve Trevor",
-                "email": "steve.trevor@email.com",
-                "phone": "555-0401",
-            }
-        ],
-    },
-    {
-        "name": "Eve Wilson",
-        "class": "1st Grade",
-        "parents": [{"name": "Bruce Wayne", "email": None, "phone": None}],
-    },
-    {
-        "name": "Frank Miller",
-        "class": "1st Grade",
-        "parents": [
-            {
-                "name": "Clark Kent",
-                "email": "clark.kent@email.com",
-                "phone": "555-0601",
-            },
-            {"name": "Lois Lane", "email": "lois.lane@email.com", "phone": "555-0602"},
-        ],
-    },
-    {
-        "name": "Grace Kelly",
-        "class": "2nd Grade",
-        "parents": [
-            {
-                "name": "James Bond",
-                "email": "james.bond@email.com",
-                "phone": "555-0701",
-            },
-            {
-                "name": "Vesper Lynd",
-                "email": "vesper.lynd@email.com",
-                "phone": "555-0702",
-            },
-            {"name": "M", "email": "m@mi6.gov.uk", "phone": "555-0703"},
-        ],
-    },
+    {"name": mock_student_name(), "class": "Kindergarten", "parents": mock_parents(2)},
+    {"name": mock_student_name(), "class": "Kindergarten", "parents": mock_parents(1)},
+    {"name": mock_student_name(), "class": "Kindergarten", "parents": mock_parents(2)},
+    {"name": mock_student_name(), "class": "1st Grade", "parents": mock_parents(1)},
+    {"name": mock_student_name(), "class": "1st Grade", "parents": mock_parents(1)},
+    {"name": mock_student_name(), "class": "1st Grade", "parents": mock_parents(2)},
+    {"name": mock_student_name(), "class": "2nd Grade", "parents": mock_parents(3)},
 ]
