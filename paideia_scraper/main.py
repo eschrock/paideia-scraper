@@ -1,9 +1,10 @@
+import argparse
 import csv
 import json
+import logging
 import sys
 import time
 
-from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
@@ -12,22 +13,30 @@ from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support.wait import WebDriverWait
 
 from .config import load_config
+from .scraper import Scraper
 
 
-def login():
-    config = load_config()
-    driver = webdriver.Chrome()
-    driver.get(config.paideia_portal_url)
+def setup_logging(debug: bool = False):
+    """Set up logging for all paideia_scraper classes."""
+    level = logging.DEBUG if debug else logging.INFO
 
-    # Enter username and password
-    user_elem = driver.find_element(By.NAME, "username")
-    user_elem.send_keys(config.paideia_user)
+    # Configure root logger for paideia_scraper package
+    logger = logging.getLogger("paideia_scraper")
+    logger.setLevel(level)
 
-    password_elem = driver.find_element(By.NAME, "password")
-    password_elem.send_keys(config.paideia_password)
-    password_elem.submit()
+    # Create console handler if none exists
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setLevel(level)
 
-    return driver
+        # Create formatter
+        formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+
+    return logger
 
 
 def get_current_group_id(driver):
@@ -38,11 +47,6 @@ def get_current_group_id(driver):
 
 
 def get_class_students(driver, class_name):
-    # Make sure "Location" is visible, as after login
-    WebDriverWait(driver, 600).until(
-        EC.presence_of_element_located((By.NAME, "const_search_location"))
-    )
-
     # Set the location
     select_elem = driver.find_element(By.NAME, "const_search_location")
     select = Select(select_elem)
@@ -205,20 +209,53 @@ def create_csv_dataset(parent_data):
 
 
 def main() -> int:
-    driver = login()
-    parent_data = {}
-    for class_name in sys.argv[1:]:
-        students = get_class_students(driver, class_name)
-        parents = get_student_parents(driver, students)
-        parent_data[class_name] = get_parent_info(driver, students, parents)
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description="Scrape student and parent information from Paideia School portal"
+    )
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument(
+        "--login-only", action="store_true", help="Only perform login, then exit"
+    )
+    parser.add_argument(
+        "classes",
+        nargs="*",
+        help="Class names to scrape (required unless --login-only is specified)",
+    )
 
-    print("Writing to output.csv")
-    csv_data = create_csv_dataset(parent_data)
-    with open("output.csv", "w", newline="") as output:
-        writer = csv.writer(output)
-        writer.writerows(csv_data)
+    args = parser.parse_args()
 
-    return 0
+    # Validate arguments
+    if not args.login_only and not args.classes:
+        parser.error("Either --login-only or at least one class name must be specified")
+
+    # Set up logging
+    setup_logging(args.debug)
+
+    config = load_config()
+    scraper = Scraper(config)
+    try:
+        scraper.login()
+
+        if args.login_only:
+            print("Successfully logged in")
+            return 0
+
+        parent_data = {}
+        for class_name in args.classes:
+            students = get_class_students(scraper.driver, class_name)
+            parents = get_student_parents(scraper.driver, students)
+            parent_data[class_name] = get_parent_info(scraper.driver, students, parents)
+
+        print("Writing to output.csv")
+        csv_data = create_csv_dataset(parent_data)
+        with open("output.csv", "w", newline="") as output:
+            writer = csv.writer(output)
+            writer.writerows(csv_data)
+
+        return 0
+    finally:
+        scraper.close()
 
 
 if __name__ == "__main__":
