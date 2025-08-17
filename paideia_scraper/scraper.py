@@ -4,6 +4,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 
+from .mock import MOCK_STUDENTS
+
 
 class Scraper:
     # Static configuration
@@ -59,6 +61,30 @@ class Scraper:
         WebDriverWait(self._driver, self.TIMEOUT).until(
             EC.presence_of_element_located((By.NAME, "const_search_location"))
         )
+
+    def get_student_info(self, mock=None, classes=None):
+        """
+        Get student information either from mock data or by scraping.
+
+        Args:
+            mock: Mock data type to use (e.g., "students") or None for real scraping
+            classes: List of class names to scrape when not using mock data
+
+        Returns:
+            List of student dictionaries with name, class, and parents
+        """
+        if mock == "students":
+            self._logger.info("Using mock student data")
+            return MOCK_STUDENTS
+
+        if classes:
+            self._logger.info(f"Scraping real data for classes: {classes}")
+            # TODO: Implement real scraping logic here using the classes parameter
+            # For now, return empty list when not using mock data
+            return []
+
+        self._logger.warning("No mock data or classes specified")
+        return []
 
     def close(self):
         """Close the webdriver and clean up resources."""

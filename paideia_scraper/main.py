@@ -15,7 +15,6 @@ from selenium.webdriver.support.wait import WebDriverWait
 
 from .config import load_config
 from .scraper import Scraper
-from .mock import MOCK_STUDENTS
 from .output import Output
 
 
@@ -42,6 +41,71 @@ def setup_logging(debug: bool = False):
     return logger
 
 
+def main() -> int:
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description="Scrape student and parent information from Paideia School parent portal"
+    )
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument(
+        "--login-only", action="store_true", help="Only perform login, then exit"
+    )
+    parser.add_argument(
+        "--mock",
+        metavar="TYPE",
+        choices=["students"],
+        help="Use mock data of specified type (can be combined with class names)",
+    )
+    parser.add_argument(
+        "classes", nargs="*", help="Class names to scrape (can be combined with --mock)"
+    )
+
+    args = parser.parse_args()
+
+    # Validate arguments
+    if not args.login_only and not args.mock and not args.classes:
+        parser.error(
+            "Either --login-only, --mock, or at least one class name must be specified"
+        )
+
+    # Set up logging
+    log = setup_logging(args.debug)
+
+    config = load_config()
+    scraper = Scraper(config)
+    try:
+        scraper.login()
+
+        if args.login_only:
+            log.info("Successfully logged in")
+            return 0
+
+        # Get student information
+        students = scraper.get_student_info(mock=args.mock, classes=args.classes)
+
+        if not students:
+            log.info("No student data retrieved")
+            return 1
+
+        # Write to Excel file
+        log.info("Writing to Excel file")
+
+        # Ensure output directory exists
+        os.makedirs("output", exist_ok=True)
+
+        # Write to Excel file
+        output = Output()
+        excel_path = "output/class_list.xlsx"
+        output.write_excel(students, excel_path)
+
+        log.info(f"Data written to {excel_path}")
+        return 0
+
+    finally:
+        scraper.close()
+
+
+# Supporting functions - kept for future migration to scraper
 def get_current_group_id(driver):
     pagination_elem = driver.find_element(By.CLASS_NAME, "fsElementPagination")
     raw_params = pagination_elem.get_attribute("data-searchparams")
@@ -55,6 +119,7 @@ def get_class_students(driver, class_name):
     select = Select(select_elem)
     select.select_by_visible_text(class_name)
     group_id = select.first_selected_option.get_attribute("value")
+    # TODO: Replace with logging when migrated to scraper
     print(f"Looking up students in class '{class_name}' ({group_id})")
     select_elem.submit()
 
@@ -73,6 +138,7 @@ def get_class_students(driver, class_name):
             student_elem.find_element(By.TAG_NAME, "span")
         except NoSuchElementException:
             student_name = student_elem.text.strip()
+            # TODO: Replace with logging when migrated to scraper
             print(f"Found student {student_name}")
             students[student_name] = student_elem
 
@@ -111,6 +177,7 @@ def get_student_parents(driver, students):
                 By.CLASS_NAME, "fsConstituentProfileLink"
             )
             parent_name = parent_link.text.strip()
+            # TODO: Replace with logging when migrated to scraper
             print(f"Found parent {parent_name} for student {student_name}")
 
             student_parents[student_name][parent_name] = parent_elem
@@ -156,6 +223,7 @@ def get_parent_info(driver, students, parents):
     for student_name, parents in parents.items():
         student_parent_info[student_name] = {}
         for parent_name in parents.keys():
+            # TODO: Replace with logging when migrated to scraper
             print(f"Getting parent info for student {student_name}")
             parent_info = {}
             contacts_elem = open_parent_dialog(
@@ -169,6 +237,7 @@ def get_parent_info(driver, students, parents):
                 )
                 email = email_elem.text.strip()
                 parent_info["email"] = email
+                # TODO: Replace with logging when migrated to scraper
                 print(f"Found email {parent_name}: {email}")
             except NoSuchElementException:
                 parent_info["email"] = None
@@ -181,6 +250,7 @@ def get_parent_info(driver, students, parents):
                 if len(mobile_elems) > 0:
                     phone_number = mobile_elems[1].text.strip()
                     parent_info["phone"] = phone_number
+                    # TODO: Replace with logging when migrated to scraper
                     print(f"Found mobile number {parent_name}: {phone_number}")
                 else:
                     parent_info["phone"] = None
@@ -211,99 +281,5 @@ def create_csv_dataset(parent_data):
     return csv_data
 
 
-def main() -> int:
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(
-        description="Scrape student and parent information from Paideia School parent portal"
-    )
-    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
-    parser.add_argument(
-        "--login-only", action="store_true", help="Only perform login, then exit"
-    )
-    parser.add_argument(
-        "--all-elementary",
-        action="store_true",
-        help="Scrape all elementary school classes",
-    )
-    parser.add_argument(
-        "--mock-students",
-        action="store_true",
-        help="Use mock data instead of scraping real data",
-    )
-    parser.add_argument(
-        "classes",
-        nargs="*",
-        help="Class names to scrape (required unless --login-only, --all-elementary, or --mock-students is specified)",
-    )
-
-    args = parser.parse_args()
-
-    # Validate arguments
-    if args.mock_students and args.classes:
-        parser.error("--mock-students cannot be used with specific class names")
-
-    if args.mock_students and args.all_elementary:
-        parser.error("--mock-students cannot be used with --all-elementary")
-
-    if (
-        not args.login_only
-        and not args.all_elementary
-        and not args.mock_students
-        and not args.classes
-    ):
-        parser.error(
-            "Either --login-only, --all-elementary, --mock-students, or at least one class name must be specified"
-        )
-
-    # Set up logging
-    setup_logging(args.debug)
-
-    config = load_config()
-    scraper = Scraper(config)
-    try:
-        scraper.login()
-
-        if args.login_only:
-            print("Successfully logged in")
-            return 0
-
-        if args.mock_students:
-            # Use mock data and write to Excel
-            print("Using mock data for testing")
-
-            # Ensure output directory exists
-            os.makedirs("output", exist_ok=True)
-
-            # Write to Excel file
-            output = Output()
-            excel_path = "output/class_list.xlsx"
-            output.write_excel(MOCK_STUDENTS, excel_path)
-
-            print(f"Mock data written to {excel_path}")
-            return 0
-
-        # Determine class list for real scraping
-        if args.all_elementary:
-            class_list = ["Elementary School"]
-        else:
-            class_list = args.classes
-
-        parent_data = {}
-        for class_name in class_list:
-            students = get_class_students(scraper.driver, class_name)
-            parents = get_student_parents(scraper.driver, students)
-            parent_data[class_name] = get_parent_info(scraper.driver, students, parents)
-
-        print("Writing to output.csv")
-        csv_data = create_csv_dataset(parent_data)
-        with open("output.csv", "w", newline="") as output:
-            writer = csv.writer(output)
-            writer.writerows(csv_data)
-
-        return 0
-    finally:
-        scraper.close()
-
-
 if __name__ == "__main__":
-    sys.exit(main())  # next section explains the use of sys.exit
+    sys.exit(main())
