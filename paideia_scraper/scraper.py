@@ -210,7 +210,7 @@ class Scraper:
                         f"Generated {len(parents)} mock parents for item {item_idx + 1}"
                     )
                 else:
-                    # Extract real parent names and add mock email/phone
+                    # Extract real parent names and store student element for later parent info extraction
                     self._logger.debug(
                         f"Extracting real parent names for item {item_idx + 1}"
                     )
@@ -230,8 +230,8 @@ class Scraper:
                     for parent_name in parent_names:
                         parent = {
                             "name": parent_name,
-                            "email": None,  # TODO: Extract real email later
-                            "phone": None,  # TODO: Extract real phone later
+                            "email": None,  # Will be filled in second pass
+                            "phone": None,  # Will be filled in second pass
                         }
                         parents.append(parent)
 
@@ -247,10 +247,14 @@ class Scraper:
                             f"Created {len(parents)} placeholder parents for item {item_idx + 1}"
                         )
 
+                    # Store the student element for later parent info extraction
+                    student_element = profile_link
+
                 student = {
                     "name": student_name,
                     "class": class_name,
                     "parents": parents,
+                    "student_element": student_element,  # Store for later parent info extraction
                 }
 
                 students.append(student)
@@ -264,6 +268,77 @@ class Scraper:
 
         self._logger.info(f"Extracted {len(students)} students from page")
         return students
+
+    def _extract_parent_contact_info_for_page(self, students):
+        """
+        Extract contact information for all parents on the current page.
+        This should be called after all students have been processed but before moving to the next page.
+
+        Args:
+            students: List of student dictionaries with student_element and parents
+        """
+        self._logger.info(
+            f"Extracting parent contact info for {len(students)} students on this page"
+        )
+
+        for student_idx, student in enumerate(students):
+            try:
+                self._logger.debug(
+                    f"Processing parent contact info for student {student_idx + 1}: {student['name']}"
+                )
+
+                # Get the stored student element
+                student_element = student.get("student_element")
+                if not student_element:
+                    self._logger.warning(
+                        f"No student element stored for {student['name']}, skipping"
+                    )
+                    continue
+
+                    # Process each parent
+                for parent_idx, parent in enumerate(student["parents"]):
+                    try:
+                        self._logger.debug(
+                            f"Processing parent {parent_idx + 1}: {parent['name']}"
+                        )
+
+                        # Open the student dialog for each parent (since parent dialog closes student dialog)
+                        self._open_student_dialog(student_element)
+
+                        # Open the parent dialog
+                        contacts_elem = self._open_parent_dialog(
+                            student_element, parent["name"]
+                        )
+
+                        # Extract contact information
+                        contact_info = self._extract_parent_contact_info(contacts_elem)
+
+                        # Update the parent with real contact info
+                        parent["email"] = contact_info["email"]
+                        parent["phone"] = contact_info["phone"]
+
+                        self._logger.debug(
+                            f"Updated parent {parent['name']} with contact info"
+                        )
+
+                        # Close the parent dialog (this also closes the student dialog)
+                        self._close_parent_dialog()
+
+                    except Exception as e:
+                        self._logger.error(
+                            f"Error processing parent {parent['name']} for student {student['name']}: {e}"
+                        )
+                        # Continue with other parents
+                        continue
+
+            except Exception as e:
+                self._logger.error(
+                    f"Error processing student {student['name']} for parent contact info: {e}"
+                )
+                # Continue with other students
+                continue
+
+        self._logger.info("Finished extracting parent contact info for this page")
 
     def _next_student_page(self):
         """
@@ -304,7 +379,6 @@ class Scraper:
         """
         from selenium.webdriver.common.action_chains import ActionChains
 
-        self._logger.debug("Opening student dialog...")
         action = ActionChains(self._driver)
         action.move_to_element(student_elem).click().perform()
 
@@ -323,6 +397,95 @@ class Scraper:
         )
         self._logger.debug("Student dialog closed successfully")
 
+    def _open_parent_dialog(self, student_elem, parent_name):
+        """
+        Open the parent dialog by clicking on a specific parent within an open student dialog.
+
+        Args:
+            student_elem: The student element (should already have dialog open)
+            parent_name: Name of the parent to open dialog for
+
+        Returns:
+            The contacts element for the parent
+        """
+        # Find parent elements within the open student dialog
+        parent_elem_list = self._driver.find_elements(
+            By.CLASS_NAME, "fsRelationshipParent"
+        )
+
+        for parent_elem in parent_elem_list:
+            parent_link = parent_elem.find_element(
+                By.CLASS_NAME, "fsConstituentProfileLink"
+            )
+            parent_elem_name = parent_link.text.strip()
+
+            if parent_elem_name == parent_name:
+                self._logger.debug(
+                    f"Found parent {parent_name}, clicking to open dialog"
+                )
+                parent_link.click()
+
+                # Wait for the contacts section to appear
+                WebDriverWait(self._driver, self.TIMEOUT).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "fsContacts"))
+                )
+
+                contacts_elem = self._driver.find_element(By.CLASS_NAME, "fsContacts")
+                self._logger.debug(f"Parent dialog opened for {parent_name}")
+                return contacts_elem
+
+        # If we get here, parent wasn't found
+        raise ValueError(f"Failed to find parent {parent_name}")
+
+    def _close_parent_dialog(self):
+        """Close the parent dialog."""
+        self._logger.debug("Closing parent dialog...")
+        close_button = self._driver.find_element(By.CLASS_NAME, "fsDialogCloseButton")
+        close_button.click()
+        WebDriverWait(self._driver, self.TIMEOUT).until(
+            EC.invisibility_of_element_located((By.CLASS_NAME, "fsContacts"))
+        )
+        self._logger.debug("Parent dialog closed successfully")
+
+    def _extract_parent_contact_info(self, contacts_elem):
+        """
+        Extract email and phone information from a parent's contacts element.
+
+        Args:
+            contacts_elem: The contacts element for the parent
+
+        Returns:
+            Dictionary with email and phone (None if not found)
+        """
+        parent_info = {"email": None, "phone": None}
+
+        try:
+            # Get the contact email
+            email_elem = contacts_elem.find_element(
+                By.CSS_SELECTOR, ".fsEmailHome .fsStyleSROnly"
+            )
+            email = email_elem.text.strip()
+            parent_info["email"] = email
+            self._logger.debug(f"Found email: {email}")
+        except NoSuchElementException:
+            self._logger.debug("No email found for parent")
+
+        # Get the contact mobile number
+        try:
+            mobile_elems = contacts_elem.find_elements(
+                By.CSS_SELECTOR, ".fsPhoneMobile div"
+            )
+            if len(mobile_elems) > 1:
+                phone_number = mobile_elems[1].text.strip()
+                parent_info["phone"] = phone_number
+                self._logger.debug(f"Found mobile number: {phone_number}")
+            else:
+                self._logger.debug("No mobile number found for parent")
+        except NoSuchElementException:
+            self._logger.debug("No mobile number found for parent")
+
+        return parent_info
+
     def _get_student_parents(self, student_elem):
         """
         Get parent names for a student by opening their dialog.
@@ -337,7 +500,6 @@ class Scraper:
 
         try:
             # Open the student dialog
-            self._logger.debug("Opening student dialog...")
             self._open_student_dialog(student_elem)
 
             # Find parents
@@ -385,6 +547,10 @@ class Scraper:
 
             # Fetch students from current page with parent info
             students_from_page = self._fetch_students_from_page(mock_parents=False)
+
+            # Extract parent contact information for this page before moving to the next
+            self._extract_parent_contact_info_for_page(students_from_page)
+
             class_students.extend(students_from_page)
 
             # Try to go to next page
@@ -393,6 +559,11 @@ class Scraper:
                 break
 
             page_num += 1
+
+        # Clean up student objects by removing the stored elements
+        for student in class_students:
+            if "student_element" in student:
+                del student["student_element"]
 
         self._logger.info(
             f"Total students collected for {class_name}: {len(class_students)}"
