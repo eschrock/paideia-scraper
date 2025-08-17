@@ -2,6 +2,7 @@ import argparse
 import csv
 import json
 import logging
+import os
 import sys
 import time
 
@@ -14,6 +15,8 @@ from selenium.webdriver.support.wait import WebDriverWait
 
 from .config import load_config
 from .scraper import Scraper
+from .mock import MOCK_STUDENTS
+from .output import Output
 
 
 def setup_logging(debug: bool = False):
@@ -211,23 +214,46 @@ def create_csv_dataset(parent_data):
 def main() -> int:
     # Parse command line arguments
     parser = argparse.ArgumentParser(
-        description="Scrape student and parent information from Paideia School portal"
+        description="Scrape student and parent information from Paideia School parent portal"
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument(
         "--login-only", action="store_true", help="Only perform login, then exit"
     )
     parser.add_argument(
+        "--all-elementary",
+        action="store_true",
+        help="Scrape all elementary school classes",
+    )
+    parser.add_argument(
+        "--mock-students",
+        action="store_true",
+        help="Use mock data instead of scraping real data",
+    )
+    parser.add_argument(
         "classes",
         nargs="*",
-        help="Class names to scrape (required unless --login-only is specified)",
+        help="Class names to scrape (required unless --login-only, --all-elementary, or --mock-students is specified)",
     )
 
     args = parser.parse_args()
 
     # Validate arguments
-    if not args.login_only and not args.classes:
-        parser.error("Either --login-only or at least one class name must be specified")
+    if args.mock_students and args.classes:
+        parser.error("--mock-students cannot be used with specific class names")
+
+    if args.mock_students and args.all_elementary:
+        parser.error("--mock-students cannot be used with --all-elementary")
+
+    if (
+        not args.login_only
+        and not args.all_elementary
+        and not args.mock_students
+        and not args.classes
+    ):
+        parser.error(
+            "Either --login-only, --all-elementary, --mock-students, or at least one class name must be specified"
+        )
 
     # Set up logging
     setup_logging(args.debug)
@@ -241,8 +267,29 @@ def main() -> int:
             print("Successfully logged in")
             return 0
 
+        if args.mock_students:
+            # Use mock data and write to Excel
+            print("Using mock data for testing")
+
+            # Ensure output directory exists
+            os.makedirs("output", exist_ok=True)
+
+            # Write to Excel file
+            output = Output()
+            excel_path = "output/class_list.xlsx"
+            output.write_excel(MOCK_STUDENTS, excel_path)
+
+            print(f"Mock data written to {excel_path}")
+            return 0
+
+        # Determine class list for real scraping
+        if args.all_elementary:
+            class_list = ["Elementary School"]
+        else:
+            class_list = args.classes
+
         parent_data = {}
-        for class_name in args.classes:
+        for class_name in class_list:
             students = get_class_students(scraper.driver, class_name)
             parents = get_student_parents(scraper.driver, students)
             parent_data[class_name] = get_parent_info(scraper.driver, students, parents)
