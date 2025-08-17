@@ -256,22 +256,5 @@ def get_parent_info(driver, students, parents):
     return student_parent_info
 
 
-def create_csv_dataset(parent_data):
-    csv_data = [["Student", "Class", "Parent", "Email", "Phone"]]
-    for class_name, students in parent_data.items():
-        for student_name, parents in students.items():
-            for parent_name, parent_info in parents.items():
-                csv_data.append(
-                    [
-                        student_name,
-                        class_name,
-                        parent_name,
-                        parent_info["email"],
-                        parent_info["phone"],
-                    ]
-                )
-    return csv_data
-
-
 if __name__ == "__main__":
     sys.exit(main())
