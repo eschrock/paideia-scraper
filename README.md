@@ -13,11 +13,12 @@ Create a `secrets/config.json` file in the project root:
 ```json
 {
   "paideia_user": "your_username_here",
-  "paideia_password": "your_password_here"
+  "paideia_password": "your_password_here",
+  "paideia_portal_url": "https://www.paideiaschool.org/pythons/parent-portal/"
 }
 ```
 
-**Note:** The `secrets/` directory is automatically ignored by git to prevent accidentally committing sensitive information.
+**Note:** The `paideia_portal_url` field is optional and defaults to the URL shown above. The `secrets/` directory is automatically ignored by git to prevent accidentally committing sensitive information.
 
 ### Option 2: Environment Variables
 
@@ -25,6 +26,7 @@ Set the following environment variables:
 
 - `PAIDEIA_USER`: Your Paideia School username
 - `PAIDEIA_PASSWORD`: Your Paideia School password
+- `PAIDEIA_PORTAL_URL`: (Optional) Custom portal URL
 
 ## Usage
 

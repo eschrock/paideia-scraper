@@ -13,13 +13,11 @@ from selenium.webdriver.support.wait import WebDriverWait
 
 from .config import load_config
 
-STUDENT_DIRECTORY_URL = "https://www.paideiaschool.org/parent-portal/student-directory"
-
 
 def login():
     config = load_config()
     driver = webdriver.Chrome()
-    driver.get(STUDENT_DIRECTORY_URL)
+    driver.get(config.paideia_portal_url)
 
     # Enter username and password
     user_elem = driver.find_element(By.NAME, "username")
