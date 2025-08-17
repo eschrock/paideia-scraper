@@ -283,10 +283,6 @@ class Scraper:
 
         for student_idx, student in enumerate(students):
             try:
-                self._logger.debug(
-                    f"Processing parent contact info for student {student_idx + 1}: {student['name']}"
-                )
-
                 # Get the stored student element
                 student_element = student.get("student_element")
                 if not student_element:
@@ -295,11 +291,13 @@ class Scraper:
                     )
                     continue
 
-                    # Process each parent
+                self._logger.info(f"Getting information for student {student['name']}")
+
+                # Process each parent
                 for parent_idx, parent in enumerate(student["parents"]):
                     try:
-                        self._logger.debug(
-                            f"Processing parent {parent_idx + 1}: {parent['name']}"
+                        self._logger.info(
+                            f"Getting information for parent {parent['name']} for student {student['name']}"
                         )
 
                         # Open the student dialog for each parent (since parent dialog closes student dialog)
@@ -316,10 +314,6 @@ class Scraper:
                         # Update the parent with real contact info
                         parent["email"] = contact_info["email"]
                         parent["phone"] = contact_info["phone"]
-
-                        self._logger.debug(
-                            f"Updated parent {parent['name']} with contact info"
-                        )
 
                         # Close the parent dialog (this also closes the student dialog)
                         self._close_parent_dialog()
