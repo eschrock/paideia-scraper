@@ -1,37 +1,32 @@
 import csv
 import json
-import os
 import sys
 import time
-from pprint import pp
 
 from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support.wait import WebDriverWait
 
+from .config import load_config
+
 STUDENT_DIRECTORY_URL = "https://www.paideiaschool.org/parent-portal/student-directory"
 
 
 def login():
-    user = os.environ.get("PAIDEIA_USER")
-    if not user:
-        exit("must set PAIDEIA_USER")
-    password = os.environ.get("PAIDEIA_PASSWORD")
-    if not password:
-        exit("must set PAIDEIA_PASSWORD")
-
+    config = load_config()
     driver = webdriver.Chrome()
     driver.get(STUDENT_DIRECTORY_URL)
 
     # Enter username and password
     user_elem = driver.find_element(By.NAME, "username")
-    user_elem.send_keys(user)
+    user_elem.send_keys(config.paideia_user)
 
     password_elem = driver.find_element(By.NAME, "password")
-    password_elem.send_keys(password)
+    password_elem.send_keys(config.paideia_password)
     password_elem.submit()
 
     return driver
@@ -80,7 +75,9 @@ def get_class_students(driver, class_name):
 
 
 def open_student_dialog(driver, student_elem):
-    student_elem.click()
+    action = ActionChains(driver)
+
+    action.move_to_element(student_elem).click().perform()
 
     WebDriverWait(driver, 600).until(
         EC.presence_of_element_located((By.CLASS_NAME, "fsRelationships"))
@@ -154,6 +151,7 @@ def get_parent_info(driver, students, parents):
     for student_name, parents in parents.items():
         student_parent_info[student_name] = {}
         for parent_name in parents.keys():
+            print(f"Getting parent info for student {student_name}")
             parent_info = {}
             contacts_elem = open_parent_dialog(
                 driver, students[student_name], parent_name
