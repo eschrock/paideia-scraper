@@ -62,4 +62,21 @@ MOCK_STUDENTS = [
             {"name": "Lois Lane", "email": "lois.lane@email.com", "phone": "555-0602"},
         ],
     },
+    {
+        "name": "Grace Kelly",
+        "class": "2nd Grade",
+        "parents": [
+            {
+                "name": "James Bond",
+                "email": "james.bond@email.com",
+                "phone": "555-0701",
+            },
+            {
+                "name": "Vesper Lynd",
+                "email": "vesper.lynd@email.com",
+                "phone": "555-0702",
+            },
+            {"name": "M", "email": "m@mi6.gov.uk", "phone": "555-0703"},
+        ],
+    },
 ]
