@@ -53,8 +53,11 @@ def main() -> int:
     parser.add_argument(
         "--mock",
         metavar="TYPE",
-        choices=["students", "parents"],
-        help="Use mock data of specified type (can be combined with class names)",
+        choices=["students", "parents", "parent-info"],
+        help=(
+            "Use mock data of specified type (can be combined with class names). "
+            "'parent-info' uses real parent names but mock contact info."
+        ),
     )
     parser.add_argument(
         "classes", nargs="*", help="Class names to scrape (can be combined with --mock)"
@@ -103,157 +106,6 @@ def main() -> int:
 
     finally:
         scraper.close()
-
-
-def get_class_students(driver, class_name):
-    # Set the location
-    select_elem = driver.find_element(By.NAME, "const_search_location")
-    select = Select(select_elem)
-    select.select_by_visible_text(class_name)
-    group_id = select.first_selected_option.get_attribute("value")
-    # TODO: Replace with logging when migrated to scraper
-    print(f"Looking up students in class '{class_name}' ({group_id})")
-    select_elem.submit()
-
-    # Make sure the given clas is loaded
-    current_group_id = get_current_group_id(driver)
-    while current_group_id != group_id:
-        time.sleep(1)
-        current_group_id = get_current_group_id(driver)
-
-    # Fetch all student elements
-    students = {}
-    student_elem_list = driver.find_elements(By.CLASS_NAME, "fsConstituentProfileLink")
-    for student_elem in student_elem_list:
-        try:
-            # This class appears twice, ignore the second case with a child span
-            student_elem.find_element(By.TAG_NAME, "span")
-        except NoSuchElementException:
-            student_name = student_elem.text.strip()
-            # TODO: Replace with logging when migrated to scraper
-            print(f"Found student {student_name}")
-            students[student_name] = student_elem
-
-    return students
-
-
-def open_student_dialog(driver, student_elem):
-    action = ActionChains(driver)
-
-    action.move_to_element(student_elem).click().perform()
-
-    WebDriverWait(driver, 600).until(
-        EC.presence_of_element_located((By.CLASS_NAME, "fsRelationships"))
-    )
-
-
-def close_student_dialog(driver):
-    close_button = driver.find_element(By.CLASS_NAME, "fsDialogCloseButton")
-    close_button.click()
-    WebDriverWait(driver, 600).until(
-        EC.invisibility_of_element_located((By.CLASS_NAME, "fsRelationships"))
-    )
-
-
-def get_student_parents(driver, students):
-    student_parents = {}
-
-    for student_name, student_elem in students.items():
-        open_student_dialog(driver, student_elem)
-        student_parents[student_name] = {}
-
-        # Find parents
-        parent_elem_list = driver.find_elements(By.CLASS_NAME, "fsRelationshipParent")
-        for parent_elem in parent_elem_list:
-            parent_link = parent_elem.find_element(
-                By.CLASS_NAME, "fsConstituentProfileLink"
-            )
-            parent_name = parent_link.text.strip()
-            # TODO: Replace with logging when migrated to scraper
-            print(f"Found parent {parent_name} for student {student_name}")
-
-            student_parents[student_name][parent_name] = parent_elem
-
-        close_student_dialog(driver)
-
-    return student_parents
-
-
-def open_parent_dialog(driver, student_elem, parent_name):
-    open_student_dialog(driver, student_elem)
-
-    parent_elem_list = driver.find_elements(By.CLASS_NAME, "fsRelationshipParent")
-    for parent_elem in parent_elem_list:
-        parent_link = parent_elem.find_element(
-            By.CLASS_NAME, "fsConstituentProfileLink"
-        )
-        parent_elem_name = parent_link.text.strip()
-
-        if parent_elem_name == parent_name:
-            parent_link.click()
-
-            WebDriverWait(driver, 600).until(
-                EC.presence_of_element_located((By.CLASS_NAME, "fsContacts"))
-            )
-            contacts_elem = driver.find_element(By.CLASS_NAME, "fsContacts")
-            return contacts_elem
-
-    exit(f"failed to find parent {parent_name}")
-
-
-def close_parent_dialog(driver):
-    close_button = driver.find_element(By.CLASS_NAME, "fsDialogCloseButton")
-    close_button.click()
-    WebDriverWait(driver, 600).until(
-        EC.invisibility_of_element_located((By.CLASS_NAME, "fsContacts"))
-    )
-
-
-def get_parent_info(driver, students, parents):
-    student_parent_info = {}
-
-    for student_name, parents in parents.items():
-        student_parent_info[student_name] = {}
-        for parent_name in parents.keys():
-            # TODO: Replace with logging when migrated to scraper
-            print(f"Getting parent info for student {student_name}")
-            parent_info = {}
-            contacts_elem = open_parent_dialog(
-                driver, students[student_name], parent_name
-            )
-
-            # Get the contact email
-            try:
-                email_elem = contacts_elem.find_element(
-                    By.CSS_SELECTOR, ".fsEmailHome .fsStyleSROnly"
-                )
-                email = email_elem.text.strip()
-                parent_info["email"] = email
-                # TODO: Replace with logging when migrated to scraper
-                print(f"Found email {parent_name}: {email}")
-            except NoSuchElementException:
-                parent_info["email"] = None
-
-            # Get the contact mobile number
-            try:
-                mobile_elems = contacts_elem.find_elements(
-                    By.CSS_SELECTOR, ".fsPhoneMobile div"
-                )
-                if len(mobile_elems) > 0:
-                    phone_number = mobile_elems[1].text.strip()
-                    parent_info["phone"] = phone_number
-                    # TODO: Replace with logging when migrated to scraper
-                    print(f"Found mobile number {parent_name}: {phone_number}")
-                else:
-                    parent_info["phone"] = None
-            except NoSuchElementException:
-                parent_info["phone"] = None
-
-            close_parent_dialog(driver)
-
-            student_parent_info[student_name][parent_name] = parent_info
-
-    return student_parent_info
 
 
 if __name__ == "__main__":

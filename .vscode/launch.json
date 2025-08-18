@@ -6,6 +6,7 @@
     "configurations": [
 
 
+
         {
             "name": "Debug Paideia Scraper - Mock Parents",
             "type": "python",
@@ -14,7 +15,7 @@
             "args": [
                 "--debug",
                 "--mock", "parents",
-                "Dan and Rebecca"
+                "Elementary School"
             ],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",

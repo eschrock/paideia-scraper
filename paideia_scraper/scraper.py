@@ -117,6 +117,75 @@ class Scraper:
                 f"Timeout waiting for class '{class_name}' data to load"
             ) from e
 
+    def _extract_student_basic_info(self, item, item_idx):
+        """
+        Extract basic student information (name and class) from a student item element.
+
+        Args:
+            item: The student item DOM element
+            item_idx: The index of the item (for logging purposes)
+
+        Returns:
+            tuple: (student_name, class_name) or (None, None) if extraction fails
+        """
+        try:
+            # Wait for student name to be populated
+            self._logger.debug(f"Waiting for name element in item {item_idx + 1}...")
+            name_elem = WebDriverWait(item, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "fsFullName"))
+            )
+
+            # Wait for the name text to be non-empty
+            self._logger.debug(
+                f"Waiting for name text to be populated in item {item_idx + 1}..."
+            )
+            WebDriverWait(item, 10).until(lambda x: name_elem.text.strip() != "")
+
+            student_name = name_elem.text.strip()
+            self._logger.debug(
+                f"Extracted name: '{student_name}' from item {item_idx + 1}"
+            )
+
+            # Skip students with empty names
+            if not student_name:
+                self._logger.debug(
+                    f"Empty student name for item {item_idx + 1}, skipping"
+                )
+                return None, None
+
+            # Wait for location to be populated
+            self._logger.debug(
+                f"Waiting for location element in item {item_idx + 1}..."
+            )
+            location_elem = WebDriverWait(item, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "fsLocations"))
+            )
+
+            # Wait for the location text to be non-empty
+            self._logger.debug(
+                f"Waiting for location text to be populated in item {item_idx + 1}..."
+            )
+            WebDriverWait(item, 10).until(lambda x: location_elem.text.strip() != "")
+
+            location_text = location_elem.text.strip()
+            self._logger.debug(
+                f"Location text: '{location_text}' from item {item_idx + 1}"
+            )
+
+            # Take only the part before the first comma
+            class_name = location_text.split(",")[0].strip()
+            self._logger.debug(
+                f"Extracted class: '{class_name}' from item {item_idx + 1}"
+            )
+
+            return student_name, class_name
+
+        except Exception as e:
+            self._logger.warning(
+                f"Could not extract basic info for item {item_idx + 1}: {e}"
+            )
+            return None, None
+
     def _fetch_students_from_page(self, mock_parents=False):
         """
         Fetch student information from the current page.
@@ -138,67 +207,28 @@ class Scraper:
         student_items = self._driver.find_elements(By.CLASS_NAME, "fsConstituentItem")
         self._logger.debug(f"Found {len(student_items)} student items")
 
-        for item_idx, item in enumerate(student_items):
+        item_idx = 0
+        while item_idx < len(student_items):
+            item = student_items[item_idx]
             self._logger.debug(
                 f"Processing student item {item_idx + 1}/{len(student_items)}"
             )
             try:
-                # Wait for student name to be populated
-                self._logger.debug(
-                    f"Waiting for name element in item {item_idx + 1}..."
-                )
-                name_elem = WebDriverWait(item, 10).until(
-                    EC.presence_of_element_located((By.CLASS_NAME, "fsFullName"))
+                # Extract basic student information using helper function
+                student_name, class_name = self._extract_student_basic_info(
+                    item, item_idx
                 )
 
-                # Wait for the name text to be non-empty
-                self._logger.debug(
-                    f"Waiting for name text to be populated in item {item_idx + 1}..."
-                )
-                WebDriverWait(item, 10).until(lambda x: name_elem.text.strip() != "")
-
-                student_name = name_elem.text.strip()
-                self._logger.debug(
-                    f"Extracted name: '{student_name}' from item {item_idx + 1}"
-                )
-
-                # Skip students with empty names (shouldn't happen now, but safety check)
-                if not student_name:
+                # Skip if extraction failed
+                if student_name is None or class_name is None:
                     continue
-
-                # Wait for location to be populated
-                self._logger.debug(
-                    f"Waiting for location element in item {item_idx + 1}..."
-                )
-                location_elem = WebDriverWait(item, 10).until(
-                    EC.presence_of_element_located((By.CLASS_NAME, "fsLocations"))
-                )
-
-                # Wait for the location text to be non-empty
-                self._logger.debug(
-                    f"Waiting for location text to be populated in item {item_idx + 1}..."
-                )
-                WebDriverWait(item, 10).until(
-                    lambda x: location_elem.text.strip() != ""
-                )
-
-                location_text = location_elem.text.strip()
-                self._logger.debug(
-                    f"Location text: '{location_text}' from item {item_idx + 1}"
-                )
-
-                # Take only the part before the first comma
-                class_name = location_text.split(",")[0].strip()
-                self._logger.debug(
-                    f"Extracted class: '{class_name}' from item {item_idx + 1}"
-                )
 
                 # Get parent information
                 self._logger.debug(
                     f"Getting parent info for item {item_idx + 1}, mock_parents={mock_parents}"
                 )
-                if mock_parents:
-                    # Generate mock parent data
+                if mock_parents is True:
+                    # Generate completely mock parent data
                     self._logger.debug(
                         f"Generating mock parents for item {item_idx + 1}"
                     )
@@ -209,52 +239,35 @@ class Scraper:
                     self._logger.debug(
                         f"Generated {len(parents)} mock parents for item {item_idx + 1}"
                     )
+                    # For mock parents, we don't need a real constituent ID
+                    constituent_id = None
                 else:
-                    # Extract real parent names and store student element for later parent info extraction
-                    self._logger.debug(
-                        f"Extracting real parent names for item {item_idx + 1}"
-                    )
+                    # For both mock parent-info and real scraping, get the constituent ID
+                    # Parent names will be extracted in a separate pass
+                    try:
+                        profile_link = item.find_element(
+                            By.CLASS_NAME, "fsConstituentProfileLink"
+                        )
+                        constituent_id = profile_link.get_attribute(
+                            "data-constituent-id"
+                        )
+                        self._logger.debug(
+                            f"Found constituent ID: {constituent_id} for {student_name}"
+                        )
+                    except Exception as e:
+                        self._logger.warning(
+                            f"Could not find constituent ID for {student_name}: {e}"
+                        )
+                        constituent_id = None
 
-                    # Find the clickable profile link within this item
-                    profile_link = item.find_element(
-                        By.CLASS_NAME, "fsConstituentProfileLink"
-                    )
-                    self._logger.debug(f"Found profile link for item {item_idx + 1}")
-
-                    parent_names = self._get_student_parents(profile_link)
-                    self._logger.debug(
-                        f"Found {len(parent_names)} real parent names: {parent_names}"
-                    )
-
+                    # Create placeholder parents - will be filled in second pass
                     parents = []
-                    for parent_name in parent_names:
-                        parent = {
-                            "name": parent_name,
-                            "email": None,  # Will be filled in second pass
-                            "phone": None,  # Will be filled in second pass
-                        }
-                        parents.append(parent)
-
-                    # If no parents found, create a placeholder
-                    if not parents:
-                        self._logger.debug(
-                            f"No real parents found for item {item_idx + 1}, creating placeholder"
-                        )
-                        from .mock import mock_parents as mock_parents_func
-
-                        parents = mock_parents_func(1)
-                        self._logger.debug(
-                            f"Created {len(parents)} placeholder parents for item {item_idx + 1}"
-                        )
-
-                    # Store the student element for later parent info extraction
-                    student_element = profile_link
 
                 student = {
                     "name": student_name,
                     "class": class_name,
                     "parents": parents,
-                    "student_element": student_element,  # Store for later parent info extraction
+                    "constituent_id": constituent_id,  # Store for later parent info extraction
                 }
 
                 students.append(student)
@@ -263,19 +276,149 @@ class Scraper:
                 )
 
             except Exception as e:
-                self._logger.warning(f"Could not extract student info from item: {e}")
-                continue
+                # Check if this is a stale element reference
+                if "stale element reference" in str(e):
+                    self._logger.debug(
+                        f"Stale element detected for item {item_idx + 1}, refreshing page elements..."
+                    )
+                    # Brief pause to let the page stabilize
+                    import time
+
+                    time.sleep(1)
+
+                    # Re-get the student items to refresh stale elements
+                    try:
+                        student_items = self._driver.find_elements(
+                            By.CLASS_NAME, "fsConstituentItem"
+                        )
+                        self._logger.debug(
+                            f"Refreshed student items, found {len(student_items)} items"
+                        )
+
+                        # Check if the item still exists after refresh
+                        if item_idx >= len(student_items):
+                            self._logger.warning(
+                                f"Item {item_idx + 1} no longer exists after refresh, skipping"
+                            )
+                        else:
+                            # Retry processing this item with the fresh element
+                            self._logger.debug(
+                                f"Retrying item {item_idx + 1} with fresh elements..."
+                            )
+                            # The refresh helps with subsequent items
+                            self._logger.debug(
+                                "Refreshed elements for page, continuing to next item"
+                            )
+
+                    except Exception as refresh_error:
+                        self._logger.warning(
+                            f"Could not refresh student items: {refresh_error}"
+                        )
+                else:
+                    self._logger.warning(
+                        f"Could not extract student info from item: {e}"
+                    )
+
+            # Move to next item
+            item_idx += 1
 
         self._logger.info(f"Extracted {len(students)} students from page")
         return students
 
+    def _extract_parent_names_for_page(self, students, mock_parents):
+        """
+        Extract parent names for all students on the current page.
+        This should be called after basic student info has been collected.
+
+        Args:
+            students: List of student dictionaries with constituent_id
+            mock_parents: Mock mode ("parent_info" for mock contact info, None/False for real)
+        """
+        self._logger.info(
+            f"Extracting parent names for {len(students)} students on this page"
+        )
+
+        for student in students:
+            try:
+                constituent_id = student.get("constituent_id")
+                if not constituent_id:
+                    self._logger.debug(
+                        f"No constituent ID for {student['name']}, skipping parent extraction"
+                    )
+                    continue
+
+                # Find the student element using the constituent ID
+                try:
+                    student_element = self._driver.find_element(
+                        By.CSS_SELECTOR, f"a[data-constituent-id='{constituent_id}']"
+                    )
+                    self._logger.debug(
+                        f"Found student element for {student['name']} using ID {constituent_id}"
+                    )
+                except Exception as e:
+                    self._logger.warning(
+                        f"Could not find student element for {student['name']} with ID {constituent_id}: {e}"
+                    )
+                    continue
+
+                # Get parent names for this student
+                parent_names = self._get_student_parents(student_element)
+                self._logger.debug(
+                    f"Found {len(parent_names)} real parent names for {student['name']}: {parent_names}"
+                )
+
+                # Create parent objects with appropriate contact info
+                parents = []
+                for parent_name in parent_names:
+                    if mock_parents == "parent_info":
+                        # Generate mock contact info for each real parent
+                        from .mock import mock_parents as mock_parents_func
+
+                        mock_parent = mock_parents_func(1)[0]
+                        parent = {
+                            "name": parent_name,
+                            "email": mock_parent["email"],
+                            "phone": mock_parent["phone"],
+                        }
+                    else:
+                        # Real scraping - contact info will be filled in next pass
+                        parent = {
+                            "name": parent_name,
+                            "email": None,  # Will be filled in contact info pass
+                            "phone": None,  # Will be filled in contact info pass
+                        }
+                    parents.append(parent)
+
+                # If no parents found, create a placeholder
+                if not parents:
+                    self._logger.debug(
+                        f"No real parents found for {student['name']}, creating placeholder"
+                    )
+                    from .mock import mock_parents as mock_parents_func
+
+                    parents = mock_parents_func(1)
+                    self._logger.debug(
+                        f"Created {len(parents)} placeholder parents for {student['name']}"
+                    )
+
+                # Update the student with the parent information
+                student["parents"] = parents
+
+            except Exception as e:
+                self._logger.error(
+                    f"Error extracting parent names for {student['name']}: {e}"
+                )
+                continue
+
+        self._logger.info("Finished extracting parent names for this page")
+
     def _extract_parent_contact_info_for_page(self, students):
         """
         Extract contact information for all parents on the current page.
-        This should be called after all students have been processed but before moving to the next page.
+        This should be called after parent names have been extracted.
 
         Args:
-            students: List of student dictionaries with student_element and parents
+            students: List of student dictionaries with constituent_id and parents
         """
         self._logger.info(
             f"Extracting parent contact info for {len(students)} students on this page"
@@ -283,11 +426,25 @@ class Scraper:
 
         for student_idx, student in enumerate(students):
             try:
-                # Get the stored student element
-                student_element = student.get("student_element")
-                if not student_element:
+                # Get the stored constituent ID and find the current element
+                constituent_id = student.get("constituent_id")
+                if not constituent_id:
                     self._logger.warning(
-                        f"No student element stored for {student['name']}, skipping"
+                        f"No constituent ID stored for {student['name']}, skipping"
+                    )
+                    continue
+
+                # Find the student element using the constituent ID
+                try:
+                    student_element = self._driver.find_element(
+                        By.CSS_SELECTOR, f"a[data-constituent-id='{constituent_id}']"
+                    )
+                    self._logger.debug(
+                        f"Found student element for {student['name']} using ID {constituent_id}"
+                    )
+                except Exception as e:
+                    self._logger.warning(
+                        f"Could not find student element for {student['name']} with ID {constituent_id}: {e}"
                     )
                     continue
 
@@ -345,24 +502,82 @@ class Scraper:
             # Look for the next page link
             next_page_link = self._driver.find_element(By.CLASS_NAME, "fsNextPageLink")
 
-            # Click the next page link
-            next_page_link.click()
-            self._logger.debug("Navigating to next page")
+            # Get the target page number from the next page link
+            target_page = next_page_link.get_attribute("data-page")
+            self._logger.debug(f"Target page: {target_page}")
 
-            # Wait for the search location field to be present (indicates page loaded)
-            WebDriverWait(self._driver, self.TIMEOUT).until(
-                EC.presence_of_element_located((By.NAME, "const_search_location"))
-            )
+            # Get the name of the first student on the current page before navigation
+            try:
+                first_student_items = self._driver.find_elements(
+                    By.CLASS_NAME, "fsConstituentItem"
+                )
+                if first_student_items:
+                    first_name_elem = first_student_items[0].find_element(
+                        By.CLASS_NAME, "fsFullName"
+                    )
+                    current_first_student_name = first_name_elem.text.strip()
+                    self._logger.debug(
+                        f"Current first student: '{current_first_student_name}'"
+                    )
+                else:
+                    self._logger.warning("No student items found on current page")
+                    current_first_student_name = None
+            except Exception as e:
+                self._logger.warning(f"Could not get current first student name: {e}")
+                current_first_student_name = None
 
-            self._logger.debug("Next page loaded successfully")
+            # Use JavaScript click to bypass element interception issues
+            self._logger.debug("Clicking next page link using JavaScript...")
+            self._driver.execute_script("arguments[0].click();", next_page_link)
+            self._logger.debug(f"Navigating to page {target_page}")
+
+            # Wait for the first student name to change (indicating new page content)
+            if current_first_student_name:
+                WebDriverWait(self._driver, self.TIMEOUT).until(
+                    lambda driver: self._get_first_student_name()
+                    != current_first_student_name
+                )
+                new_first_student_name = self._get_first_student_name()
+                self._logger.debug(
+                    f"Page changed - new first student: '{new_first_student_name}'"
+                )
+            else:
+                # Fallback: just wait for student items to be present
+                WebDriverWait(self._driver, self.TIMEOUT).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "fsConstituentItem"))
+                )
+                self._logger.debug("Page navigation completed (fallback method)")
+
+            self._logger.debug(f"Successfully navigated to page {target_page}")
             return True
 
         except NoSuchElementException:
             # No next page link found
+            self._logger.debug("No next page link found")
             return False
         except Exception as e:
             self._logger.error(f"Error navigating to next page: {e}")
             return False
+
+    def _get_first_student_name(self):
+        """
+        Helper method to get the name of the first student on the current page.
+
+        Returns:
+            str: Name of the first student, or None if not found
+        """
+        try:
+            first_student_items = self._driver.find_elements(
+                By.CLASS_NAME, "fsConstituentItem"
+            )
+            if first_student_items:
+                first_name_elem = first_student_items[0].find_element(
+                    By.CLASS_NAME, "fsFullName"
+                )
+                return first_name_elem.text.strip()
+            return None
+        except Exception:
+            return None
 
     def _open_student_dialog(self, student_elem):
         """
@@ -539,8 +754,11 @@ class Scraper:
         while True:
             self._logger.info(f"Fetching students from page {page_num}")
 
-            # Fetch students from current page with parent info
+            # Fetch basic student info from current page
             students_from_page = self._fetch_students_from_page(mock_parents=False)
+
+            # Extract parent names for this page
+            self._extract_parent_names_for_page(students_from_page, mock_parents=False)
 
             # Extract parent contact information for this page before moving to the next
             self._extract_parent_contact_info_for_page(students_from_page)
@@ -554,10 +772,10 @@ class Scraper:
 
             page_num += 1
 
-        # Clean up student objects by removing the stored elements
+        # Clean up student objects by removing the stored constituent IDs
         for student in class_students:
-            if "student_element" in student:
-                del student["student_element"]
+            if "constituent_id" in student:
+                del student["constituent_id"]
 
         self._logger.info(
             f"Total students collected for {class_name}: {len(class_students)}"
@@ -601,6 +819,52 @@ class Scraper:
         )
         return class_students
 
+    def _get_class_student_info_with_mock_parent_info(self, class_name):
+        """
+        Get student information for a single class by scraping all pages, using real parent names
+        but mock contact information.
+
+        Args:
+            class_name: Name of the class to scrape
+
+        Returns:
+            List of student dictionaries with name, class, and parents with mock contact info
+        """
+        self._logger.info(f"Processing class: {class_name} with mock parent info")
+
+        # Select the class and wait for it to load
+        self._select_class(class_name)
+
+        class_students = []
+        page_num = 1
+
+        while True:
+            self._logger.info(f"Fetching students from page {page_num}")
+
+            # Fetch basic student info from current page
+            students_from_page = self._fetch_students_from_page(
+                mock_parents="parent_info"
+            )
+
+            # Extract parent names with mock contact info for this page
+            self._extract_parent_names_for_page(
+                students_from_page, mock_parents="parent_info"
+            )
+
+            class_students.extend(students_from_page)
+
+            # Try to go to next page
+            if not self._next_student_page():
+                self._logger.debug(f"No more pages for class {class_name}")
+                break
+
+            page_num += 1
+
+        self._logger.info(
+            f"Total students collected for {class_name}: {len(class_students)}"
+        )
+        return class_students
+
     def get_student_info(self, mock=None, classes=None):
         """
         Get student information either from mock data or by scraping.
@@ -621,6 +885,10 @@ class Scraper:
                 self._logger.info(
                     f"Scraping real student data with mock parents for classes: {classes}"
                 )
+            elif mock == "parent-info":
+                self._logger.info(
+                    f"Scraping real student data with real parent names but mock contact info for classes: {classes}"
+                )
             else:
                 self._logger.info(f"Scraping real data for classes: {classes}")
 
@@ -633,6 +901,13 @@ class Scraper:
                         # Use mock parents
                         class_students = self._get_class_student_info_with_mock_parents(
                             class_name
+                        )
+                    elif mock == "parent-info":
+                        # Use real parent names with mock contact info
+                        class_students = (
+                            self._get_class_student_info_with_mock_parent_info(
+                                class_name
+                            )
                         )
                     else:
                         # Use real parent names
