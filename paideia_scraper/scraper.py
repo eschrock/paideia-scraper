@@ -276,48 +276,9 @@ class Scraper:
                 )
 
             except Exception as e:
-                # Check if this is a stale element reference
-                if "stale element reference" in str(e):
-                    self._logger.debug(
-                        f"Stale element detected for item {item_idx + 1}, refreshing page elements..."
-                    )
-                    # Brief pause to let the page stabilize
-                    import time
-
-                    time.sleep(1)
-
-                    # Re-get the student items to refresh stale elements
-                    try:
-                        student_items = self._driver.find_elements(
-                            By.CLASS_NAME, "fsConstituentItem"
-                        )
-                        self._logger.debug(
-                            f"Refreshed student items, found {len(student_items)} items"
-                        )
-
-                        # Check if the item still exists after refresh
-                        if item_idx >= len(student_items):
-                            self._logger.warning(
-                                f"Item {item_idx + 1} no longer exists after refresh, skipping"
-                            )
-                        else:
-                            # Retry processing this item with the fresh element
-                            self._logger.debug(
-                                f"Retrying item {item_idx + 1} with fresh elements..."
-                            )
-                            # The refresh helps with subsequent items
-                            self._logger.debug(
-                                "Refreshed elements for page, continuing to next item"
-                            )
-
-                    except Exception as refresh_error:
-                        self._logger.warning(
-                            f"Could not refresh student items: {refresh_error}"
-                        )
-                else:
-                    self._logger.warning(
-                        f"Could not extract student info from item: {e}"
-                    )
+                self._logger.warning(
+                    f"Could not extract student info from item {item_idx + 1}: {e}"
+                )
 
             # Move to next item
             item_idx += 1
@@ -388,18 +349,6 @@ class Scraper:
                             "phone": None,  # Will be filled in contact info pass
                         }
                     parents.append(parent)
-
-                # If no parents found, create a placeholder
-                if not parents:
-                    self._logger.debug(
-                        f"No real parents found for {student['name']}, creating placeholder"
-                    )
-                    from .mock import mock_parents as mock_parents_func
-
-                    parents = mock_parents_func(1)
-                    self._logger.debug(
-                        f"Created {len(parents)} placeholder parents for {student['name']}"
-                    )
 
                 # Update the student with the parent information
                 student["parents"] = parents
